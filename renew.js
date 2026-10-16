@@ -48,7 +48,6 @@ async function notify(message, photoPath) {
   });
   const page = await context.newPage();
 
-  // Capture network responses for debugging
   page.on('response', async (response) => {
     const url = response.url();
     if (url.includes('/auth/login') && response.request().method() === 'POST') {
@@ -71,7 +70,12 @@ async function notify(message, photoPath) {
 
     console.log('[3] Solving captcha...');
     const captcha = page.locator('.auth-captcha-inner').first();
-    const box = await captcha.boundingBox();
+    let box = null;
+    try {
+      box = await captcha.boundingBox({ timeout: 8000 });
+    } catch (e) {
+      console.log('  No captcha widget detected, skipping captcha step');
+    }
     if (box) {
       await page.mouse.move(box.x - 50, box.y - 30);
       await page.waitForTimeout(300);
@@ -79,20 +83,20 @@ async function notify(message, photoPath) {
       await page.waitForTimeout(200);
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.waitForTimeout(150);
-    }
-    await captcha.click();
-    await page.waitForTimeout(3000);
-
-    const verified = await page.locator('.auth-captcha-box.verified').count();
-    if (verified === 0) {
-      console.log('[3b] Retrying captcha...');
       await captcha.click();
       await page.waitForTimeout(3000);
+      const verified = await page.locator('.auth-captcha-box.verified').count();
+      if (verified === 0) {
+        console.log('[3b] Retrying captcha...');
+        await captcha.click();
+        await page.waitForTimeout(3000);
+      }
+      console.log(`  Captcha verified: ${(await page.locator('.auth-captcha-box.verified').count()) > 0}`);
+    } else {
+      console.log('  Skipped (no captcha on login page)');
     }
-    console.log(`  Captcha verified: ${(await page.locator('.auth-captcha-box.verified').count()) > 0}`);
 
     console.log('[4] Signing in...');
-    // Click and wait for network response
     const [response] = await Promise.all([
       page.waitForResponse(r => r.url().includes('/auth/login') && r.request().method() === 'POST', { timeout: 15000 }).catch(() => null),
       page.click('button:has-text("Sign in")')
@@ -115,12 +119,9 @@ async function notify(message, photoPath) {
     if (currentUrl.includes('/auth/login')) {
       const screenshotPath = '/tmp/acl_login_error.png';
       await page.screenshot({ path: screenshotPath, fullPage: true });
-      
-      // Get all visible text for debugging
       const bodyText = await page.evaluate(() => document.body.innerText);
       console.log(`  Page text: ${bodyText.substring(0, 500)}`);
-      
-      await notify(`❌ ACLClouds Login Failed\nURL: ${currentUrl}\nProxy: ${PROXY_URL ? 'Yes' : 'No'}\n\nPage text:\n${bodyText.substring(0, 300)}`, screenshotPath);
+      await notify(`ACLClouds Login Failed\nURL: ${currentUrl}\nProxy: ${PROXY_URL ? 'Yes' : 'No'}\n\nPage text:\n${bodyText.substring(0, 300)}`, screenshotPath);
       throw new Error('Login failed - still on login page');
     }
 
@@ -134,7 +135,7 @@ async function notify(message, photoPath) {
     });
 
     if (serversResp.errors) {
-      await notify(`❌ ACLClouds API Error: ${JSON.stringify(serversResp.errors)}`);
+      await notify(`ACLClouds API Error: ${JSON.stringify(serversResp.errors)}`);
       process.exit(1);
     }
 
@@ -153,7 +154,7 @@ async function notify(message, photoPath) {
           const csrfMeta = document.querySelector('meta[name="csrf-token"]');
           const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
           const r = await fetch(`/api/client/servers/${uuid}/upgrade/renew`, {
-            method: 'POST', headers: { 
+            method: 'POST', headers: {
               'Content-Type': 'application/json',
               'X-CSRF-TOKEN': csrfToken,
               'X-Requested-With': 'XMLHttpRequest'
@@ -162,17 +163,17 @@ async function notify(message, photoPath) {
           return r.json();
         }, uuid);
         console.log('  Response:', JSON.stringify(renewResp));
-        if (renewResp.error) results.push(`⚠️ ${name}: ${renewResp.error}`);
-        else if (renewResp.requires_payment) results.push(`💰 ${name}: Requires payment`);
-        else results.push(`✅ ${name}: Renewed!`);
+        if (renewResp.error) results.push(`${name}: ${renewResp.error}`);
+        else if (renewResp.requires_payment) results.push(`${name}: Requires payment`);
+        else results.push(`${name}: Renewed!`);
       } else {
-        console.log('  ⏳ Not available yet');
-        results.push(`⏳ ${name}: Not available yet (expires: ${expires_at})`);
+        console.log('  Not available yet');
+        results.push(`${name}: Not available yet (expires: ${expires_at})`);
       }
     }
 
     const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-    await notify(`☁️ <b>ACLClouds Auto-Renew</b>\n⏰ ${now}\n\n${results.join('\n')}`);
+    await notify(`ACLClouds Auto-Renew\n${now}\n\n${results.join('\n')}`);
     console.log('\n=== Summary ===');
     results.forEach(r => console.log(r));
     console.log('\n=== Done ===');
