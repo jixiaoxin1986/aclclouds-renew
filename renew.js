@@ -68,49 +68,23 @@ async function notify(message, photoPath) {
     await page.fill('#username', EMAIL);
     await page.fill('#password', PASSWORD);
 
-    console.log('[3] Solving captcha...');
-    const captcha = page.locator('.auth-captcha-inner').first();
-    let box = null;
+    console.log('[3] Waiting for captcha to complete...');
     try {
-      box = await captcha.boundingBox({ timeout: 8000 });
+      await page.waitForFunction(() => {
+        const btn = document.querySelector('button.auth-submit-btn');
+        return btn && !btn.disabled;
+      }, { timeout: 60000 });
+      console.log('  Sign-in button enabled, captcha appears solved');
     } catch (e) {
-      console.log('  No captcha widget detected, skipping captcha step');
-    }
-    if (box) {
-      await page.mouse.move(box.x - 50, box.y - 30);
-      await page.waitForTimeout(300);
-      await page.mouse.move(box.x + 10, box.y + 10);
-      await page.waitForTimeout(200);
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.waitForTimeout(150);
-      await captcha.click();
-      await page.waitForTimeout(3000);
-      const verified = await page.locator('.auth-captcha-box.verified').count();
-      if (verified === 0) {
-        console.log('[3b] Retrying captcha...');
-        await captcha.click();
-        await page.waitForTimeout(3000);
-      }
-      console.log(`  Captcha verified: ${(await page.locator('.auth-captcha-box.verified').count()) > 0}`);
-    } else {
-      console.log('  Skipped (no captcha on login page)');
-      const formHtml = await page.evaluate(() => {
-        const form = document.querySelector('form');
-        return form ? form.outerHTML : 'no form found';
+      const widgetHtml = await page.evaluate(() => {
+        const w = document.querySelector('.auth-cap-widget');
+        return w ? w.innerHTML.substring(0, 500) : 'no .auth-cap-widget found';
       });
-      console.log('FORM LENGTH:' + formHtml.length);
-      console.log('FORM TAIL:' + formHtml.substring(3000));
-      const scripts = await page.evaluate(() => {
-        return 'SCRIPTS:\n' + Array.from(document.querySelectorAll('script[src]')).map(s => s.src).join('\n');
-      });
-      console.log(scripts);
+      console.log('  Captcha widget HTML (first 500 chars):\n' + widgetHtml);
+      throw new Error('Sign-in button still disabled after 60s - captcha not solved');
     }
 
     console.log('[4] Signing in...');
-    await page.evaluate(() => {
-      const btn = document.querySelector('button.auth-submit-btn');
-      if (btn) btn.disabled = false;
-    });
     const [response] = await Promise.all([
       page.waitForResponse(r => r.url().includes('/auth/login') && r.request().method() === 'POST', { timeout: 15000 }).catch(() => null),
       page.click('button.auth-submit-btn')
