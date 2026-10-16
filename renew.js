@@ -96,9 +96,14 @@ async function notify(message, photoPath) {
       console.log('  Skipped (no captcha on login page)');
       const formHtml = await page.evaluate(() => {
         const form = document.querySelector('form');
-        return form ? form.outerHTML.substring(0, 3000) : 'no form found';
+        return form ? form.outerHTML : 'no form found';
       });
-      console.log('  Login form HTML (first 3000 chars):\n' + formHtml);
+      console.log('FORM LENGTH:' + formHtml.length);
+      console.log('FORM TAIL:' + formHtml.substring(3000));
+      const scripts = await page.evaluate(() => {
+        return 'SCRIPTS:\n' + Array.from(document.querySelectorAll('script[src]')).map(s => s.src).join('\n');
+      });
+      console.log(scripts);
     }
 
     console.log('[4] Signing in...');
