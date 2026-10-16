@@ -97,9 +97,13 @@ async function notify(message, photoPath) {
     }
 
     console.log('[4] Signing in...');
+    await page.evaluate(() => {
+      const btn = document.querySelector('button.auth-submit-btn, button:has-text("Sign in")');
+      if (btn) btn.disabled = false;
+    });
     const [response] = await Promise.all([
       page.waitForResponse(r => r.url().includes('/auth/login') && r.request().method() === 'POST', { timeout: 15000 }).catch(() => null),
-      page.click('button:has-text("Sign in")')
+      page.click('button.auth-submit-btn')
     ]);
 
     if (response) {
