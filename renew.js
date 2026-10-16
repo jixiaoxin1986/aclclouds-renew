@@ -80,13 +80,6 @@ async function notify(message, photoPath) {
       const tokenLen = await page.evaluate(() => document.querySelector('input[name="cap-token"]').value.length);
       console.log(`  Cap token received (length: ${tokenLen})`);
     } catch (e) {
-      const widgetState = await page.evaluate(() => {
-        const w = document.querySelector('cap-widget');
-        if (!w) return 'no cap-widget found';
-        const t = w.querySelector('input[name="cap-token"]');
-        return `widget outerHTML (first 500 chars): ${w.outerHTML.substring(0, 500)}\ncap-token value length: ${t ? t.value.length : 'no token input'}`;
-      });
-      console.log('  Cap widget state on timeout:\n' + widgetState);
       throw new Error('Cap token still empty after 120s - captcha not solved');
     }
 
@@ -102,10 +95,6 @@ async function notify(message, photoPath) {
 
     if (response) {
       console.log(`  Login response: ${response.status()}`);
-      try {
-        const body = await response.json();
-        console.log(`  Login body: ${JSON.stringify(body)}`);
-      } catch (e) {}
     } else {
       console.log('  No POST /auth/login response captured');
     }
@@ -115,11 +104,6 @@ async function notify(message, photoPath) {
     console.log(`  Current URL: ${currentUrl}`);
 
     if (currentUrl.includes('/auth/login')) {
-      const screenshotPath = '/tmp/acl_login_error.png';
-      await page.screenshot({ path: screenshotPath, fullPage: true });
-      const bodyText = await page.evaluate(() => document.body.innerText);
-      console.log(`  Page text: ${bodyText.substring(0, 500)}`);
-      await notify(`ACLClouds Login Failed\nURL: ${currentUrl}\nProxy: ${PROXY_URL ? 'Yes' : 'No'}\n\nPage text:\n${bodyText.substring(0, 300)}`, screenshotPath);
       throw new Error('Login failed - still on login page');
     }
 
@@ -147,23 +131,31 @@ async function notify(message, photoPath) {
       console.log(`  Expires: ${expires_at} | Can renew: ${can_renew}`);
 
       if (can_renew) {
-        console.log('  [RENEWING]...');
-        const renewResp = await page.evaluate(async (uuid) => {
-          const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-          const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
-          const r = await fetch(`/api/client/servers/${uuid}/upgrade/renew`, {
-            method: 'POST', headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-TOKEN': csrfToken,
-              'X-Requested-With': 'XMLHttpRequest'
-            }
-          });
-          return r.json();
-        }, uuid);
-        console.log('  Response:', JSON.stringify(renewResp));
-        if (renewResp.error) results.push(`${name}: ${renewResp.error}`);
-        else if (renewResp.requires_payment) results.push(`${name}: Requires payment`);
-        else results.push(`${name}: Renewed!`);
+        console.log('  [RENEWING via UI]...');
+        try {
+          const shortId = uuid.split('-')[0];
+          await page.goto(`https://aclclouds.com/server/${shortId}`, { waitUntil: 'networkidle' });
+          await page.click('button:has-text("Renouveler")');
+          console.log('  Renew button clicked, waiting for Cap modal...');
+          await page.waitForSelector('cap-widget', { timeout: 15000 });
+          console.log('  Cap modal appeared, solving...');
+          await page.click('cap-widget');
+          const renewResp = await page.waitForResponse(
+            r => r.url().includes('/upgrade/renew') && r.request().method() === 'POST',
+            { timeout: 120000 }
+          ).catch(() => null);
+          if (renewResp) {
+            const body = await renewResp.json().catch(() => ({}));
+            console.log(`  Renew API: ${renewResp.status()} ${JSON.stringify(body)}`);
+            if (renewResp.status() === 200 && !body.error) results.push(`${name}: Renewed!`);
+            else results.push(`${name}: ${body.error || body.message || 'renew failed'}`);
+          } else {
+            results.push(`${name}: No renew response captured`);
+          }
+        } catch (e) {
+          console.log(`  UI renew failed: ${e.message}`);
+          results.push(`${name}: UI renew failed - ${e.message}`);
+        }
       } else {
         console.log('  Not available yet');
         results.push(`${name}: Not available yet (expires: ${expires_at})`);
