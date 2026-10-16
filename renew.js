@@ -135,7 +135,8 @@ async function notify(message, photoPath) {
         try {
           const shortId = uuid.split('-')[0];
           await page.goto(`https://aclclouds.com/server/${shortId}`, { waitUntil: 'networkidle' });
-          await page.click('button:has-text("Renouveler")');
+          await page.waitForSelector('button:has-text("Renouveler"), button:has-text("Renew")', { timeout: 20000 });
+          await page.click('button:has-text("Renouveler"), button:has-text("Renew")');
           console.log('  Renew button clicked, waiting for Cap modal...');
           await page.waitForSelector('cap-widget', { timeout: 15000 });
           console.log('  Cap modal appeared, solving...');
