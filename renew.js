@@ -68,23 +68,33 @@ async function notify(message, photoPath) {
     await page.fill('#username', EMAIL);
     await page.fill('#password', PASSWORD);
 
-    console.log('[3] Waiting for captcha to complete...');
+    console.log('[3] Solving Cap captcha...');
+    await page.waitForSelector('cap-widget', { timeout: 30000 });
+    console.log('  Clicking cap-widget to start solving...');
+    await page.click('cap-widget');
     try {
       await page.waitForFunction(() => {
-        const btn = document.querySelector('button.auth-submit-btn');
-        return btn && !btn.disabled;
-      }, { timeout: 60000 });
-      console.log('  Sign-in button enabled, captcha appears solved');
+        const t = document.querySelector('input[name="cap-token"]');
+        return t && t.value && t.value.length > 0;
+      }, { timeout: 120000 });
+      const tokenLen = await page.evaluate(() => document.querySelector('input[name="cap-token"]').value.length);
+      console.log(`  Cap token received (length: ${tokenLen})`);
     } catch (e) {
-      const widgetHtml = await page.evaluate(() => {
-        const w = document.querySelector('.auth-cap-widget');
-        return w ? w.innerHTML.substring(0, 500) : 'no .auth-cap-widget found';
+      const widgetState = await page.evaluate(() => {
+        const w = document.querySelector('cap-widget');
+        if (!w) return 'no cap-widget found';
+        const t = w.querySelector('input[name="cap-token"]');
+        return `widget outerHTML (first 500 chars): ${w.outerHTML.substring(0, 500)}\ncap-token value length: ${t ? t.value.length : 'no token input'}`;
       });
-      console.log('  Captcha widget HTML (first 500 chars):\n' + widgetHtml);
-      throw new Error('Sign-in button still disabled after 60s - captcha not solved');
+      console.log('  Cap widget state on timeout:\n' + widgetState);
+      throw new Error('Cap token still empty after 120s - captcha not solved');
     }
 
     console.log('[4] Signing in...');
+    await page.waitForFunction(() => {
+      const btn = document.querySelector('button.auth-submit-btn');
+      return btn && !btn.disabled;
+    }, { timeout: 30000 });
     const [response] = await Promise.all([
       page.waitForResponse(r => r.url().includes('/auth/login') && r.request().method() === 'POST', { timeout: 15000 }).catch(() => null),
       page.click('button.auth-submit-btn')
