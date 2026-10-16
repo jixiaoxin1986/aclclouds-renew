@@ -94,6 +94,11 @@ async function notify(message, photoPath) {
       console.log(`  Captcha verified: ${(await page.locator('.auth-captcha-box.verified').count()) > 0}`);
     } else {
       console.log('  Skipped (no captcha on login page)');
+      const formHtml = await page.evaluate(() => {
+        const form = document.querySelector('form');
+        return form ? form.outerHTML.substring(0, 3000) : 'no form found';
+      });
+      console.log('  Login form HTML (first 3000 chars):\n' + formHtml);
     }
 
     console.log('[4] Signing in...');
