@@ -98,7 +98,7 @@ async function notify(message, photoPath) {
 
     console.log('[4] Signing in...');
     await page.evaluate(() => {
-      const btn = document.querySelector('button.auth-submit-btn, button:has-text("Sign in")');
+      const btn = document.querySelector('button.auth-submit-btn');
       if (btn) btn.disabled = false;
     });
     const [response] = await Promise.all([
